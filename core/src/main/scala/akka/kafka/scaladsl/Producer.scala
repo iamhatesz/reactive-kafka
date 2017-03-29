@@ -5,7 +5,7 @@
 package akka.kafka.scaladsl
 
 import akka.kafka.ProducerMessage._
-import akka.kafka.internal.ProducerStage
+import akka.kafka.internal.{CustomProducerStage, ProducerStage}
 import akka.kafka.{ConsumerMessage, ProducerSettings}
 import akka.stream.ActorAttributes
 import akka.stream.scaladsl.{Flow, Keep, Sink}
@@ -101,6 +101,22 @@ object Producer {
       closeTimeout = settings.closeTimeout,
       closeProducerOnStop = false,
       producerProvider = () => producer
+    )).mapAsync(settings.parallelism)(identity)
+
+    if (settings.dispatcher.isEmpty) flow
+    else flow.withAttributes(ActorAttributes.dispatcher(settings.dispatcher))
+  }
+
+  def flow[E, PassThrough](
+    settings: ProducerSettings[String, Array[Byte]],
+    producer: KafkaProducer[String, Array[Byte]],
+    producerRecord: E => ProducerRecord[String, Array[Byte]]
+  ): Flow[(Iterable[E], PassThrough), PassThrough, NotUsed] = {
+    val flow = Flow.fromGraph(new CustomProducerStage[E, PassThrough](
+      closeTimeout = settings.closeTimeout,
+      closeProducerOnStop = false,
+      producerProvider = () => producer,
+      producerRecordProvider = producerRecord
     )).mapAsync(settings.parallelism)(identity)
 
     if (settings.dispatcher.isEmpty) flow
